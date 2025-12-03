@@ -1,0 +1,18 @@
+[Unit]
+Description=Recursive directory watcher for /srv/share
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/sh /usr/local/bin/watch-share.sh
+Restart=always
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=watch-share
+RestartSec=5
+
+# Optional: make sure inotify-tools is installed before starting
+#ExecStartPre=/usr/bin/test -x /usr/bin/inotifywait
+
+[Install]
+WantedBy=multi-user.target
