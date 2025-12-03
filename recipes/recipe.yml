@@ -33,7 +33,7 @@ modules:
         - rclone
         - duperemove
         - inotify-tools
-        - udisks
+        - udisks2
   - type: systemd
     system:
       enabled:
