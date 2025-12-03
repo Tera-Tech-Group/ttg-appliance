@@ -34,6 +34,7 @@ modules:
         - duperemove
         - inotify-tools
         - udisks2
+        - vsftpd
   - type: systemd
     system:
       enabled:
