@@ -33,6 +33,10 @@ modules:
         - rclone
         - duperemove
         - inotify-tools
+  - type: systemd
+    system:
+      enabled:
+        - smb.service
 
 
   - type: signing # this sets up the proper policy & signing files for signed images to work fully
