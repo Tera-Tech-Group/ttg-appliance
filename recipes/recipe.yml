@@ -38,6 +38,7 @@ modules:
         - inotify-tools
         - udisks2
         - wireshark-cli
+        - tailscale
   - type: systemd
     system:
       enabled:
