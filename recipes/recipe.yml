@@ -41,6 +41,7 @@ modules:
         - tailscale
         - dos2unix
         - tayga
+        - radvd
   - type: systemd
     system:
       enabled:
