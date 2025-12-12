@@ -40,6 +40,7 @@ modules:
         - wireshark-cli
         - tailscale
         - dos2unix
+        - tayga
   - type: systemd
     system:
       enabled:
@@ -53,6 +54,5 @@ modules:
         - tailscaled.service
       disabled:
         - zincati.service
-
 
   - type: signing # this sets up the proper policy & signing files for signed images to work fully
