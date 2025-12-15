@@ -54,6 +54,8 @@ modules:
         - btrfs-trim.timer
         - tailscaled.service
         - rpm-ostreed-automatic.timer
+        - podman-auto-update.timer
+        - btrfs-scrub.timer
       disabled:
         - zincati.service
 
