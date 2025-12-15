@@ -50,10 +50,10 @@ modules:
         - watch-share.service
         - init-share.service
         - init-tailscale.service
-        - bootc-fetch-apply-updates.timer
         - btrfs-scrub.timer
         - btrfs-trim.timer
         - tailscaled.service
+        - rpm-ostreed-automatic.timer
       disabled:
         - zincati.service
 
