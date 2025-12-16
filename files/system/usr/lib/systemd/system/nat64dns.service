@@ -1,6 +1,7 @@
 [Unit]
 Description=Custom NAT64 DNS Server
-After=network.target
+Wants=tailscaled.service
+After=network.target tailscaled.service
 
 [Service]
 Type=simple
