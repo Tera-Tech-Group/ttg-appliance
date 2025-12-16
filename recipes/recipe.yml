@@ -43,6 +43,7 @@ modules:
         - tayga
         - radvd
         - traceroute
+        - bind9-next
   - type: systemd
     system:
       enabled:
