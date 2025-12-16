@@ -43,7 +43,6 @@ modules:
         - tayga
         - radvd
         - traceroute
-        - bind9-next
         - python3-dnslib
   - type: systemd
     system:

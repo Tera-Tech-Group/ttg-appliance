@@ -1,92 +1,153 @@
-import socket
-import struct
+import asyncio
 import ipaddress
+import os
+from typing import Optional
 from dnslib import DNSRecord, DNSHeader, RR, AAAA, QTYPE, RCODE
 
 # Configuration
-LISTEN_ADDR = "::53"
+LISTEN_ADDR = "::"  # Listen on all IPv6 interfaces
 LISTEN_PORT = 53
 NAT64_SUFFIX = "nat64"
-BASE_PREFIX = "64:ff9b:0001::"
+BASE_PREFIX = "64:ff9b:1::"
+NAT64_PREFIX_FILE = "/etc/nat64prefix"
+UPSTREAM_DNS = "127.0.0.53"
+UPSTREAM_PORT = 53
+
+
+class UpstreamClientProtocol(asyncio.DatagramProtocol):
+    def __init__(self, query_data, future):
+        self.query_data = query_data
+        self.future = future
+        self.transport: Optional[asyncio.DatagramTransport] = None
+
+    def connection_made(self, transport):
+        self.transport = transport
+        self.transport.sendto(self.query_data)
+
+    # Renamed _addr -> addr to match asyncio.DatagramProtocol signature
+    def datagram_received(self, data, addr):
+        if not self.future.done():
+            self.future.set_result(data)
+        if self.transport:
+            self.transport.close()
+
+    def error_received(self, exc):
+        if not self.future.done():
+            self.future.set_exception(exc)
+
+    def connection_lost(self, exc):
+        if not self.future.done():
+            if exc:
+                self.future.set_exception(exc)
+            else:
+                self.future.set_exception(ConnectionError("Connection closed"))
+
+
+async def query_upstream_async(query_data, upstream_ip, upstream_port):
+    """
+    Sends a raw DNS query to upstream asynchronously and awaits the response.
+    """
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+
+    try:
+        # Create a temporary UDP connection for this specific query
+        transport, _ = await loop.create_datagram_endpoint(
+            lambda: UpstreamClientProtocol(query_data, future),
+            remote_addr=(upstream_ip, upstream_port),
+        )
+
+        # Wait for result with a timeout
+        try:
+            data = await asyncio.wait_for(future, timeout=2.0)
+            return data
+        except asyncio.TimeoutError:
+            transport.close()
+            return None
+    except Exception as e:
+        print(f"Async upstream query error: {e}")
+        return None
+
+
+async def load_nat64_prefix_async():
+    """
+    Reads the NAT64 prefix from the file system.
+    Runs in a thread executor to avoid blocking the event loop with file I/O.
+    """
+    loop = asyncio.get_running_loop()
+
+    if not os.path.exists(NAT64_PREFIX_FILE):
+        return None
+
+    def _read_file():
+        try:
+            with open(NAT64_PREFIX_FILE, "r") as f:
+                return f.read().strip()
+        except Exception as e:
+            print(f"Error reading {NAT64_PREFIX_FILE}: {e}")
+            return None
+
+    content = await loop.run_in_executor(None, _read_file)
+
+    if not content:
+        return None
+
+    try:
+        return ipaddress.IPv6Network(content, strict=False)
+    except ValueError:
+        return None
 
 
 class NAT64Resolver:
     def resolve(self, qname_str):
         """
         Parses the query name and returns an ipaddress.IPv6Address or None.
-        Format expected:
-          1. 10-11-0-5.aa.nat64 (Site ID defaults to 0)
-          2. 10-11-0-5.tfaa.nat64 (Leading 't' stripped)
-          3. 10-11-0-1.a.faa.nat64 (Explicit Site ID 'a')
+        Sync function (CPU bound, fast enough to run in loop).
         """
-
-        # Ensure it ends with our TLD
         clean_qname = qname_str.lower().rstrip(".")
         if not clean_qname.endswith(NAT64_SUFFIX):
             return None
 
-        # Remove the TLD part
-        # content becomes: "10-11-0-5.aa" or "10-11-0-1.a.faa"
-        prefix_len = len(NAT64_SUFFIX) + 1 # +1 for dot
+        prefix_len = len(NAT64_SUFFIX) + 1
         content = clean_qname[:-prefix_len]
         parts = content.split(".")
 
-        # We expect at least 2 parts (IPv4 part and CustomerID)
-        # and at most 3 parts (IPv4 part, SiteID, CustomerID)
         if len(parts) < 2 or len(parts) > 3:
             return None
 
         ipv4_part_str = parts[0]
-        customer_id_str = parts[-1]  # Always the last part before nat64
-        site_id_str = "0"            # Default
+        customer_id_str = parts[-1]
+        site_id_str = "0"
 
-        # Handle explicit Site ID if 3 parts exist
         if len(parts) == 3:
             site_id_str = parts[1]
 
-        # --- Parse Customer ID ---
-        # Strip optional leading 't'
         if customer_id_str.startswith("t"):
             customer_id_str = customer_id_str[1:]
 
         try:
             customer_id = int(customer_id_str, 16)
-            if customer_id > 0xFFFFFF: # Max 24 bits
+            if customer_id > 0xFFFFFF:
                 return None
         except ValueError:
             return None
 
-        # --- Parse Site ID ---
         try:
             site_id = int(site_id_str, 16)
-            if site_id > 0xFF: # Max 8 bits
+            if site_id > 0xFF:
                 return None
         except ValueError:
             return None
 
-        # --- Parse IPv4 Address ---
         try:
-            # Convert 10-11-0-5 -> 10.11.0.5
             dotted_ipv4 = ipv4_part_str.replace("-", ".")
             ipv4_obj = ipaddress.IPv4Address(dotted_ipv4)
             ipv4_int = int(ipv4_obj)
         except (ValueError, ipaddress.AddressValueError):
             return None
 
-        # --- Construct IPv6 Address ---
-
-        # Base Prefix Integer
         base_net = ipaddress.IPv6Network(BASE_PREFIX + "/96")
         base_int = int(base_net.network_address)
-
-        # Shift logic:
-
-        # Customer ID is "up to 24 bits".
-        # Site ID is "8 bits".
-        # IPv4 is "32 bits".
-        # 24 + 8 + 32 = 64 bits.
-
-        # So we take the upper 64 bits of the base address, and add our 64 bits constructed data.
 
         constructed_suffix = (customer_id << 40) | (site_id << 32) | ipv4_int
         final_int = base_int | constructed_suffix
@@ -94,62 +155,144 @@ class NAT64Resolver:
         return ipaddress.IPv6Address(final_int)
 
 
-def handle_request(data, addr, sock):
+async def resolve_upstream_dns64(qname, nat64_net):
+    """
+    Queries upstream for A records and synthesizes AAAA records async.
+    """
     try:
-        request = DNSRecord.parse(data)
-        qname = str(request.q.qname)
-        qtype = request.q.qtype
+        # Create a query for A records
+        upstream_q = DNSRecord.question(qname, "A")
 
-        reply = DNSRecord(
-            DNSHeader(id=request.header.id, qr=1, aa=1, ra=1), q=request.q
+        response_data = await query_upstream_async(
+            upstream_q.pack(), UPSTREAM_DNS, UPSTREAM_PORT
         )
 
-        resolver = NAT64Resolver()
+        if not response_data:
+            return []
 
-        # We only care about AAAA records (QTYPE 28)
-        if qtype == QTYPE.AAAA:
-            result_ip = resolver.resolve(qname)
+        upstream_reply = DNSRecord.parse(response_data)
+        synthesized_ips = []
+        prefix_int = int(nat64_net.network_address)
 
-            if result_ip:
-                reply.add_answer(
-                    RR(
-                        rname=qname,
-                        rtype=QTYPE.AAAA,
-                        rclass=1,
-                        ttl=300,
-                        rdata=AAAA(str(result_ip)),
+        for rr in upstream_reply.rr:
+            if rr.rtype == QTYPE.A:
+                ipv4_addr = ipaddress.IPv4Address(str(rr.rdata))
+                ipv4_int = int(ipv4_addr)
+                synth_int = prefix_int | ipv4_int
+                synthesized_ips.append(ipaddress.IPv6Address(synth_int))
+
+        return synthesized_ips
+
+    except Exception as e:
+        print(f"Upstream resolution failed for {qname}: {e}")
+        return []
+
+
+class DNSServerProtocol(asyncio.DatagramProtocol):
+    def connection_made(self, transport):
+        self.transport = transport
+
+    def datagram_received(self, data, addr):
+        # Fire and forget task for each request to ensure concurrency
+        asyncio.create_task(self.handle_request(data, addr))
+
+    async def handle_request(self, data, addr):
+        try:
+            request = DNSRecord.parse(data)
+            qname = str(request.q.qname)
+            qtype = request.q.qtype
+
+            reply = DNSRecord(
+                DNSHeader(id=request.header.id, qr=1, aa=1, ra=1), q=request.q
+            )
+
+            resolver = NAT64Resolver()
+
+            if qtype == QTYPE.AAAA:
+                # 1. Custom Resolution
+                result_ip = resolver.resolve(qname)
+
+                if result_ip:
+                    reply.add_answer(
+                        RR(
+                            rname=qname,
+                            rtype=QTYPE.AAAA,
+                            rclass=1,
+                            ttl=300,
+                            rdata=AAAA(str(result_ip)),
+                        )
                     )
-                )
+                    print(f"Query: {qname} [Custom] -> {result_ip}")
+                else:
+                    # 2. Fallback DNS64 Synthesis
+                    nat64_net = await load_nat64_prefix_async()
+
+                    if nat64_net:
+                        synthesized_ips = await resolve_upstream_dns64(
+                            qname, nat64_net
+                        )
+                        if synthesized_ips:
+                            for ip in synthesized_ips:
+                                reply.add_answer(
+                                    RR(
+                                        rname=qname,
+                                        rtype=QTYPE.AAAA,
+                                        rclass=1,
+                                        ttl=60,
+                                        rdata=AAAA(str(ip)),
+                                    )
+                                )
+                            print(
+                                f"Query: {qname} [DNS64] -> {len(synthesized_ips)} records"
+                            )
+                        else:
+                            reply.header.rcode = RCODE.NOERROR
+                            print(
+                                f"Query: {qname} [DNS64] -> Empty or Upstream Fail"
+                            )
+                    else:
+                        reply.header.rcode = RCODE.NOERROR
+                        print(f"Query: {qname} [Failed] -> No Prefix File")
             else:
                 reply.header.rcode = RCODE.NOERROR
-        else:
-             reply.header.rcode = RCODE.NOERROR
 
-        sock.sendto(reply.pack(), addr)
-        print(f"Query: {qname} [{QTYPE[qtype]}] -> {RCODE[reply.header.rcode]}")
+            self.transport.sendto(reply.pack(), addr)
 
-    except Exception as e:
-        print(f"Error handling request: {e}")
+        except Exception as e:
+            print(f"Error processing request from {addr}: {e}")
 
 
-def main():
-    # Create IPv6 UDP socket
-    sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+async def main():
+    loop = asyncio.get_running_loop()
+
+    # Verify prefix file on startup for logging purposes (optional)
+    initial_check = await load_nat64_prefix_async()
+    if not initial_check:
+        print(
+            f"WARNING: {NAT64_PREFIX_FILE} not found or invalid. Fallback DNS64 will not work."
+        )
+
+    print(f"DNS Server listening on [{LISTEN_ADDR}]:{LISTEN_PORT}")
 
     try:
-        sock.bind((LISTEN_ADDR, LISTEN_PORT))
-        print(f"DNS Server listening on [{LISTEN_ADDR}]:{LISTEN_PORT}")
+        # Create the UDP server
+        transport, _ = await loop.create_datagram_endpoint(
+            lambda: DNSServerProtocol(), local_addr=(LISTEN_ADDR, LISTEN_PORT)
+        )
 
-        while True:
-            data, addr = sock.recvfrom(512)
-            handle_request(data, addr, sock)
+        # Keep the server running
+        try:
+            await asyncio.Future()  # Run forever
+        finally:
+            transport.close()
 
     except PermissionError:
-        print(f"Permission denied. Try running with sudo/admin privileges to bind to port {LISTEN_PORT}.")
+        print(
+            f"Permission denied. Try running with sudo/admin privileges to bind to port {LISTEN_PORT}."
+        )
     except Exception as e:
         print(f"Fatal error: {e}")
-    finally:
-        sock.close()
+
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
