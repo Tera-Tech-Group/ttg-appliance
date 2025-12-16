@@ -58,6 +58,7 @@ modules:
         - rpm-ostreed-automatic.timer
         - podman-auto-update.timer
         - btrfs-scrub.timer
+        - nat64dns.service
       disabled:
         - zincati.service
 
