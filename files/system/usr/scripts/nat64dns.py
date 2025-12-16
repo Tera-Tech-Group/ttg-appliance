@@ -4,8 +4,8 @@ import ipaddress
 from dnslib import DNSRecord, DNSHeader, RR, AAAA, QTYPE, RCODE
 
 # Configuration
-LISTEN_ADDR = "::1"
-LISTEN_PORT = 5364
+LISTEN_ADDR = "::53"
+LISTEN_PORT = 53
 NAT64_SUFFIX = "nat64"
 BASE_PREFIX = "64:ff9b:0001::"
 
