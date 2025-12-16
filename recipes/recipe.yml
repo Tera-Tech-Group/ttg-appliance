@@ -44,6 +44,7 @@ modules:
         - radvd
         - traceroute
         - python3-dnslib
+        - python3-netifaces
   - type: systemd
     system:
       enabled:

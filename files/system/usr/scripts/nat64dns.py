@@ -1,17 +1,38 @@
 import asyncio
 import ipaddress
 import os
+import netifaces
 from typing import Optional
 from dnslib import DNSRecord, DNSHeader, RR, AAAA, QTYPE, RCODE
 
 # Configuration
-LISTEN_ADDR = "::"  # Listen on all IPv6 interfaces
+INTERFACE_NAME = "tailscale0"
 LISTEN_PORT = 53
 NAT64_SUFFIX = "nat64"
 BASE_PREFIX = "64:ff9b:1::"
 NAT64_PREFIX_FILE = "/etc/nat64prefix"
 UPSTREAM_DNS = "127.0.0.53"
 UPSTREAM_PORT = 53
+
+
+def get_interface_ipv6_addrs(iface_name):
+    """
+    Returns a list of IPv6 addresses assigned to the specific interface.
+    """
+    try:
+        if iface_name not in netifaces.interfaces():
+            print(f"Interface {iface_name} not found.")
+            return []
+        
+        addrs = netifaces.ifaddresses(iface_name)
+        # AF_INET6 is usually integer 10 or 30 depending on OS, netifaces handles this
+        if netifaces.AF_INET6 in addrs:
+            # Extract just the IP strings, removing scope IDs (e.g. %tailscale0) if present
+            return [x['addr'].split('%')[0] for x in addrs[netifaces.AF_INET6]]
+        return []
+    except Exception as e:
+        print(f"Error getting addresses for {iface_name}: {e}")
+        return []
 
 
 class UpstreamClientProtocol(asyncio.DatagramProtocol):
@@ -261,38 +282,51 @@ class DNSServerProtocol(asyncio.DatagramProtocol):
         except Exception as e:
             print(f"Error processing request from {addr}: {e}")
 
-
 async def main():
     loop = asyncio.get_running_loop()
 
-    # Verify prefix file on startup for logging purposes (optional)
     initial_check = await load_nat64_prefix_async()
     if not initial_check:
-        print(
-            f"WARNING: {NAT64_PREFIX_FILE} not found or invalid. Fallback DNS64 will not work."
-        )
+        print(f"WARNING: {NAT64_PREFIX_FILE} not found or invalid. Fallback DNS64 will not work.")
 
-    print(f"DNS Server listening on [{LISTEN_ADDR}]:{LISTEN_PORT}")
+    # Get IPs specifically for tailscale0
+    listen_ips = get_interface_ipv6_addrs(INTERFACE_NAME)
+    
+    if not listen_ips:
+        print(f"No IPv6 addresses found on {INTERFACE_NAME}. Exiting.")
+        return
+
+    transports = []
 
     try:
-        # Create the UDP server
-        transport, _ = await loop.create_datagram_endpoint(
-            lambda: DNSServerProtocol(), local_addr=(LISTEN_ADDR, LISTEN_PORT)
-        )
+        # Create a server endpoint for every IP found on the interface
+        for ip in listen_ips:
+            print(f"Binding to {INTERFACE_NAME} -> [{ip}]:{LISTEN_PORT}")
+            try:
+                transport, _ = await loop.create_datagram_endpoint(
+                    lambda: DNSServerProtocol(),
+                    local_addr=(ip, LISTEN_PORT)
+                )
+                transports.append(transport)
+            except OSError as e:
+                print(f"Failed to bind {ip}: {e}")
 
-        # Keep the server running
+        if not transports:
+            print("Could not bind to any addresses.")
+            return
+
+        print("DNS Server is running.")
+        
         try:
-            await asyncio.Future()  # Run forever
+            await asyncio.Future() # Run forever
         finally:
-            transport.close()
+            for t in transports:
+                t.close()
 
     except PermissionError:
-        print(
-            f"Permission denied. Try running with sudo/admin privileges to bind to port {LISTEN_PORT}."
-        )
+        print(f"Permission denied. Try running with sudo/admin privileges to bind to port {LISTEN_PORT}.")
     except Exception as e:
         print(f"Fatal error: {e}")
-
 
 if __name__ == "__main__":
     asyncio.run(main())
