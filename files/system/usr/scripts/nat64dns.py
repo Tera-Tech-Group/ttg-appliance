@@ -121,11 +121,9 @@ def handle_request(data, addr, sock):
                     )
                 )
             else:
-                reply.header.rcode = RCODE.NXDOMAIN
+                reply.header.rcode = RCODE.NOERROR
         else:
-             # Just return NOERROR with no records for non-AAAA types
-             # (unless you want NXDOMAIN for everything else)
-             reply.header.rcode = RCODE.NXDOMAIN
+             reply.header.rcode = RCODE.NOERROR
 
         sock.sendto(reply.pack(), addr)
         print(f"Query: {qname} [{QTYPE[qtype]}] -> {RCODE[reply.header.rcode]}")
