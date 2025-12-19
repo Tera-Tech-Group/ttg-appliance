@@ -59,6 +59,7 @@ modules:
         - podman-auto-update.timer
         - btrfs-scrub.timer
         - nat64dns.service
+        - tayga.service
       disabled:
         - zincati.service
 
