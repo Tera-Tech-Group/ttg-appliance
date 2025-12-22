@@ -96,7 +96,7 @@ done
 
 echo "All member + enabled user folders processed."
 
-mkdir /srv/share/Shared
+mkdir "$BASE_DIR"/Shared
 
 echo "Setting up permissions..."
 # Use || true to prevent script exit if SELinux is disabled/missing
