@@ -10,7 +10,7 @@ INTERFACE_NAME = "tailscale0"
 LISTEN_PORT = 53
 NAT64_SUFFIX = "nat64"
 BASE_PREFIX = "64:ff9b:1::"
-NAT64_PREFIX_FILE = "/etc/nat64prefix"
+NAT64_PREFIX_FILE = "/etc/tayga/default.conf"
 UPSTREAM_DNS = "127.0.0.53"
 UPSTREAM_PORT = 53
 
@@ -113,8 +113,14 @@ async def load_nat64_prefix_async():
     if not content:
         return None
 
+    for line in content:
+        line = line.strip()
+        if line.startswith("prefix"):
+            parts = line.split()
+            if len (parts) >= 2:
+                ipv6_prefix = parts[1]
     try:
-        return ipaddress.IPv6Network(content, strict=False)
+        return ipaddress.IPv6Network(ipv6_prefix, strict=False)
     except ValueError:
         return None
 
