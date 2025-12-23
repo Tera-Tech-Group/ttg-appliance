@@ -97,33 +97,41 @@ async def load_nat64_prefix_async():
     """
     loop = asyncio.get_running_loop()
 
-    if not os.path.exists(NAT64_PREFIX_FILE):
-        return None
-
-    def _read_file():
+    def _read_and_parse():
         try:
             with open(NAT64_PREFIX_FILE, "r") as f:
-                return f.read().strip()
+                lines = f.readlines()
+            
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                    
+                if line.startswith("prefix"):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        return parts[1]
+            return None
+            
+        except FileNotFoundError:
+            # File doesn't exist, just return None
+            return None
         except Exception as e:
             print(f"Error reading {NAT64_PREFIX_FILE}: {e}")
             return None
 
-    content = await loop.run_in_executor(None, _read_file)
+    # Run the file IO and string parsing in the thread
+    ipv6_prefix_str = await loop.run_in_executor(None, _read_and_parse)
 
-    if not content:
+    if not ipv6_prefix_str:
         return None
 
-    for line in content:
-        line = line.strip()
-        if line.startswith("prefix"):
-            parts = line.split()
-            if len (parts) >= 2:
-                ipv6_prefix = parts[1]
     try:
-        return ipaddress.IPv6Network(ipv6_prefix, strict=False)
+        # Validate the IP object back in the main thread
+        return ipaddress.IPv6Network(ipv6_prefix_str, strict=False)
     except ValueError:
+        print(f"Invalid IPv6 prefix format: {ipv6_prefix_str}")
         return None
-
 
 class NAT64Resolver:
     def resolve(self, qname_str):
