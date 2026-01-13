@@ -45,6 +45,7 @@ modules:
         - traceroute
         - python3-dnslib
         - python3-netifaces
+        - smartmontools
   - type: systemd
     system:
       enabled:
