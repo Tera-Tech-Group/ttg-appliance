@@ -46,6 +46,7 @@ modules:
         - python3-dnslib
         - python3-netifaces
         - smartmontools
+        - nmap
   - type: systemd
     system:
       enabled:
