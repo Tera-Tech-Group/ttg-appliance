@@ -1,9 +1,9 @@
 ---
 # yaml-language-server: $schema=https://schema.blue-build.org/recipe-v1.json
 # image will be published to ghcr.io/<user>/<name>
-name: ttg-appliance
+name: ttg-router
 # description will be included in the image's metadata
-description: Appliance for scans share and tera-tech network access
+description: Tailscale subnet router image
 
 # the base image to build on top of (FROM) and the version tag to use
 base-image: quay.io/fedora/fedora-coreos
@@ -13,18 +13,15 @@ image-version: stable # latest is also supported if you want new updates ASAP
 # you can include multiple instances of the same module
 modules:
   - from-file: common.yml
-  - type: dnf
-    install:
-      packages:
-        - rclone
-        - traceroute
   - type: systemd
     system:
       enabled:
+        - init-tailscale.service
+        - tailscaled.service
+      disabled:
+        - zincati.service
         - smb.service
         - watch-share.service
         - init-share.service
-        - init-tailscale.service
-        - tailscaled.service
         - nat64dns.service
         - tayga.service

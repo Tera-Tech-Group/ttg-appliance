@@ -1,0 +1,45 @@
+modules:
+  - type: files
+    files:
+      - source: system
+        destination: / # copies files/system/* (* means everything inside it) into your image's root folder /
+
+  - type: dnf
+    repos:
+      files:
+        - https://pkgs.tailscale.com/stable/fedora/tailscale.repo
+    install:
+      packages:
+        - clevis
+        - clevis-luks
+        - clevis-dracut
+        - clevis-udisks2
+        - clevis-systemd
+        - NetworkManager-tui
+        - fping
+        - btop
+        - btrfsmaintenance
+        - duperemove
+        - inotify-tools
+        - udisks2
+        - wireshark-cli
+        - tailscale
+        - dos2unix
+        - tayga
+        - radvd
+        - traceroute
+        - smartmontools
+        - nmap
+        - python3-dnslib
+        - python3-netifaces
+  - type: systemd
+    system:
+      enabled:
+        - btrfs-scrub.timer
+        - btrfs-trim.timer
+        - rpm-ostreed-automatic.timer
+        - podman-auto-update.timer
+        - btrfs-scrub.timer
+      disabled:
+        - zincati.service
+  - type: signing # this sets up the proper policy & signing files for signed images to work fully
