@@ -18,6 +18,7 @@ modules:
       packages:
         - rclone
         - traceroute
+        - samba
   - type: systemd
     system:
       enabled:
