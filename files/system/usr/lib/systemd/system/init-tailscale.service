@@ -7,9 +7,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/sbin/dos2unix /etc/secrets
-ExecStart=/usr/sbin/sleep 1
-ExecStart=/usr/sbin/sh /usr/scripts/init-tailscale.sh
+ExecStart=/usr/bin/dos2unix /etc/secrets
+ExecStart=/usr/bin/sleep 1
+ExecStart=/usr/bin/sh /usr/scripts/init-tailscale.sh
 ExecStart=/usr/bin/touch /etc/init-tailscale
 User=root
 # Clean up environment to ensure no leaked vars, but keeping necessary paths
