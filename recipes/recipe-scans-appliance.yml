@@ -12,20 +12,4 @@ image-version: stable # latest is also supported if you want new updates ASAP
 # module configuration, executed in order
 # you can include multiple instances of the same module
 modules:
-  - from-file: common.yml
-  - type: dnf
-    install:
-      packages:
-        - rclone
-        - traceroute
-        - samba
-  - type: systemd
-    system:
-      enabled:
-        - smb.service
-        - watch-share.service
-        - init-share.service
-        - init-tailscale.service
-        - tailscaled.service
-        - nat64dns.service
-        - tayga.service
+  - from-file: scans.yml

@@ -27,8 +27,10 @@ jobs:
       matrix:
         recipe:
           # !! Add your recipes here
-          - recipe.yml
-          - recipe-router.yml
+          - recipe-scans-appliance.yml
+          - recipe-scans-appliance.vmware.yml
+          - recipe-tailscale-subnet-router.yml
+          - recipe-tailscale-subnet-router.vmware.yml
     steps:
       # the build is fully handled by the reusable github action
       - name: Build Custom Image

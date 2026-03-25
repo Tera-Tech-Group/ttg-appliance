@@ -1,0 +1,18 @@
+modules:
+  - from-file: common.yml
+  - type: dnf
+    install:
+      packages:
+        - rclone
+        - traceroute
+        - samba
+  - type: systemd
+    system:
+      enabled:
+        - smb.service
+        - watch-share.service
+        - init-share.service
+        - init-tailscale.service
+        - tailscaled.service
+        - nat64dns.service
+        - tayga.service
