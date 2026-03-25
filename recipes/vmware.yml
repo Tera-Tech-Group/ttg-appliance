@@ -2,4 +2,4 @@ modules:
   - type: dnf
     install:
       packages:
-        - open-vmware-tools
+        - open-vm-tools
